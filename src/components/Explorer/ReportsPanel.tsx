@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { ChevronRight, ChevronDown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useExplorerStore } from "@/stores/explorerStore";
@@ -121,11 +121,6 @@ export function ReportsPanel({ onReportSelect }: ReportsPanelProps) {
                         <div className="ml-6 mt-1">
                             {group.reports.map((report) => {
                                 // Check if this report matches the search
-                                const isNameMatch = searchQuery
-                                    ? report.name
-                                          .toLowerCase()
-                                          .includes(searchQuery.toLowerCase())
-                                    : false;
                                 const isSqlMatch = searchQuery
                                     ? report.sql
                                           .toLowerCase()

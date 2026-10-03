@@ -1,7 +1,16 @@
-import type { HaloTokens, HaloUser, AuthConfig } from "./types";
+import type { HaloTokens, AuthConfig } from "./types";
 
 // Token storage keys
 const TOKEN_STORAGE_KEY = "halo-tokens";
+
+// PKCE + state storage keys (sessionStorage: bound to this tab's login attempt)
+const PKCE_VERIFIER_KEY = "halo-pkce-verifier";
+const OAUTH_STATE_KEY = "halo-oauth-state";
+
+// Clock skew tolerance applied when checking token expiry
+export const TOKEN_EXPIRY_SKEW_MS = 30_000;
+
+const OAUTH_SCOPE = "read:reporting edit:reporting offline_access";
 
 // Track processed authorization codes to prevent duplicates
 const processedCodes = new Set<string>();
@@ -9,10 +18,38 @@ const processedCodes = new Set<string>();
 // Clean up old processed codes periodically (every 5 minutes)
 setInterval(() => {
     if (processedCodes.size > 100) {
-        console.log("Cleaning up processed authorization codes");
         processedCodes.clear();
     }
 }, 5 * 60 * 1000);
+
+function stripTrailingSlash(url: string): string {
+    return url.replace(/\/+$/, "");
+}
+
+function base64UrlEncode(bytes: Uint8Array): string {
+    let binary = "";
+    bytes.forEach((b) => {
+        binary += String.fromCharCode(b);
+    });
+    return btoa(binary)
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+}
+
+function generateRandomString(byteLength: number): string {
+    const bytes = new Uint8Array(byteLength);
+    crypto.getRandomValues(bytes);
+    return base64UrlEncode(bytes);
+}
+
+async function sha256Base64Url(input: string): Promise<string> {
+    const digest = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(input)
+    );
+    return base64UrlEncode(new Uint8Array(digest));
+}
 
 export function loadTokens(): HaloTokens | null {
     try {
@@ -28,7 +65,8 @@ export function loadTokens(): HaloTokens | null {
 }
 
 export function saveTokens(tokens: HaloTokens): void {
-    localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens));
+    const stamped: HaloTokens = { ...tokens, obtained_at: Date.now() };
+    localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(stamped));
 }
 
 export function clearTokens(): void {
@@ -39,28 +77,28 @@ export function clearProcessedCodes(): void {
     processedCodes.clear();
 }
 
-export function getCurrentUser(): HaloUser | null {
-    const tokens = loadTokens();
-    if (tokens) {
-        return {
-            id: "user",
-            username: "user",
-        };
-    }
-    return null;
+/**
+ * Pure helper: reports whether the given tokens grant authenticated access
+ * at time `now`, tolerating `skewMs` of clock skew. Tokens without a recorded
+ * `obtained_at` are treated as expired (fail closed).
+ */
+export function isTokenValid(
+    tokens: HaloTokens | null | undefined,
+    now: number = Date.now(),
+    skewMs: number = TOKEN_EXPIRY_SKEW_MS
+): boolean {
+    if (!tokens?.access_token) return false;
+    if (typeof tokens.expires_in !== "number") return false;
+    if (typeof tokens.obtained_at !== "number") return false;
+    const expiresAt = tokens.obtained_at + tokens.expires_in * 1000;
+    return now < expiresAt - skewMs;
 }
 
 export function isAuthenticated(): boolean {
-    const tokens = loadTokens();
-    if (!tokens) return false;
-
-    // Check if token is expired
-    const now = Date.now();
-    const expiresAt = now + tokens.expires_in * 1000;
-    return now < expiresAt;
+    return isTokenValid(loadTokens());
 }
 
-export function startAuth(config: AuthConfig): void {
+export async function startAuth(config: AuthConfig): Promise<void> {
     // Validate required fields
     if (!config.authServer || !config.clientId || !config.redirectUri) {
         throw new Error(
@@ -68,20 +106,31 @@ export function startAuth(config: AuthConfig): void {
         );
     }
 
+    // Generate PKCE verifier/challenge (S256) and a CSRF state value
+    const verifier = generateRandomString(64);
+    const challenge = await sha256Base64Url(verifier);
+    const state = generateRandomString(32);
+    sessionStorage.setItem(PKCE_VERIFIER_KEY, verifier);
+    sessionStorage.setItem(OAUTH_STATE_KEY, state);
+
     const params = new URLSearchParams({
         client_id: config.clientId,
         response_type: "code",
-        scope: "read:reporting edit:reporting offline_access",
+        scope: OAUTH_SCOPE,
         redirect_uri: config.redirectUri,
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        state,
     });
 
-    const authUrl = `${config.authServer}/authorize?${params.toString()}`;
+    const authUrl = `${stripTrailingSlash(config.authServer)}/authorize?${params.toString()}`;
     window.location.href = authUrl;
 }
 
 export async function handleCallback(
     config: AuthConfig,
-    code: string
+    code: string,
+    state?: string | null
 ): Promise<boolean> {
     try {
         // Check if this code has already been processed
@@ -103,21 +152,43 @@ export async function handleCallback(
             );
         }
 
+        // Verify state and retrieve the PKCE verifier (single use)
+        const expectedState = sessionStorage.getItem(OAUTH_STATE_KEY);
+        const verifier = sessionStorage.getItem(PKCE_VERIFIER_KEY);
+        sessionStorage.removeItem(OAUTH_STATE_KEY);
+        sessionStorage.removeItem(PKCE_VERIFIER_KEY);
+
+        if (!expectedState || !state || state !== expectedState) {
+            console.error(
+                "OAuth state mismatch: possible CSRF attack, aborting login"
+            );
+            return false;
+        }
+
+        if (!verifier) {
+            console.error("Missing PKCE verifier, aborting login");
+            return false;
+        }
+
         const tokenParams = new URLSearchParams({
             grant_type: "authorization_code",
             client_id: config.clientId,
             redirect_uri: config.redirectUri,
             code: code,
-            scope: "read:reporting edit:reporting offline_access",
+            scope: OAUTH_SCOPE,
+            code_verifier: verifier,
         });
 
-        const tokenResponse = await fetch(`${config.authServer}/token`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: tokenParams,
-        });
+        const tokenResponse = await fetch(
+            `${stripTrailingSlash(config.authServer)}/token`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                body: tokenParams,
+            }
+        );
 
         if (!tokenResponse.ok) {
             let errorMessage = `Token request failed: ${tokenResponse.statusText}`;
@@ -145,7 +216,20 @@ export async function handleCallback(
     }
 }
 
-export async function refreshToken(config: AuthConfig): Promise<boolean> {
+// Single-flight guard: concurrent refresh callers share one token request
+let refreshPromise: Promise<boolean> | null = null;
+
+export function refreshToken(config: AuthConfig): Promise<boolean> {
+    if (refreshPromise) {
+        return refreshPromise;
+    }
+    refreshPromise = doRefresh(config).finally(() => {
+        refreshPromise = null;
+    });
+    return refreshPromise;
+}
+
+async function doRefresh(config: AuthConfig): Promise<boolean> {
     try {
         const tokens = loadTokens();
         if (!tokens?.refresh_token) {
@@ -153,18 +237,21 @@ export async function refreshToken(config: AuthConfig): Promise<boolean> {
             return false;
         }
 
-        const response = await fetch(`${config.authServer}/token`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: new URLSearchParams({
-                grant_type: "refresh_token",
-                client_id: config.clientId,
-                refresh_token: tokens.refresh_token,
-                scope: "read:reporting edit:reporting offline_access",
-            }),
-        });
+        const response = await fetch(
+            `${stripTrailingSlash(config.authServer)}/token`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                body: new URLSearchParams({
+                    grant_type: "refresh_token",
+                    client_id: config.clientId,
+                    refresh_token: tokens.refresh_token,
+                    scope: OAUTH_SCOPE,
+                }),
+            }
+        );
 
         if (!response.ok) {
             const errorText = await response.text();
@@ -183,6 +270,10 @@ export async function refreshToken(config: AuthConfig): Promise<boolean> {
         }
 
         const newTokens: HaloTokens = await response.json();
+        // Some providers omit the refresh token when it is unchanged; keep it
+        if (!newTokens.refresh_token) {
+            newTokens.refresh_token = tokens.refresh_token;
+        }
         saveTokens(newTokens);
         return true;
     } catch (error) {
@@ -192,8 +283,42 @@ export async function refreshToken(config: AuthConfig): Promise<boolean> {
     }
 }
 
-export function logout(): void {
+export async function logout(config?: AuthConfig): Promise<void> {
+    // Best-effort revocation (RFC 7009): never block logout on failure
+    const tokens = loadTokens();
+    if (config?.authServer && tokens) {
+        const endpoint = `${stripTrailingSlash(config.authServer)}/revoke`;
+        const revoke = async (token: string, hint: string) => {
+            try {
+                await fetch(endpoint, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type":
+                            "application/x-www-form-urlencoded",
+                    },
+                    body: new URLSearchParams({
+                        token,
+                        token_type_hint: hint,
+                        client_id: config.clientId,
+                    }),
+                });
+            } catch {
+                // Best-effort: ignore revocation failures
+            }
+        };
+        await Promise.allSettled([
+            tokens.refresh_token
+                ? revoke(tokens.refresh_token, "refresh_token")
+                : Promise.resolve(),
+            tokens.access_token
+                ? revoke(tokens.access_token, "access_token")
+                : Promise.resolve(),
+        ]);
+    }
+
     clearTokens();
+    sessionStorage.removeItem(PKCE_VERIFIER_KEY);
+    sessionStorage.removeItem(OAUTH_STATE_KEY);
     // Clear processed codes on logout
     processedCodes.clear();
     // Redirect to login page

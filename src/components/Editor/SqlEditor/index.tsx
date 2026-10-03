@@ -1,4 +1,4 @@
-import { useEffect, lazy, Suspense } from "react";
+import { lazy, Suspense, useCallback } from "react";
 import { useSqlEditor } from "./hooks/useSqlEditor";
 
 // Lazy load Monaco Editor to reduce initial bundle size
@@ -11,6 +11,8 @@ const MonacoWrapper = lazy(() =>
 interface SqlEditorProps {
     sql: string;
     onContentChange: (sql: string) => void;
+    onSave?: (sql: string) => void;
+    onExecute?: (sql: string) => void;
     isReport?: boolean;
     originalSql?: string; // For reports, this is the original SQL from the database
 }
@@ -18,14 +20,25 @@ interface SqlEditorProps {
 export function SqlEditor({
     sql,
     onContentChange,
-    isReport = false,
+    onSave,
+    onExecute,
     originalSql,
 }: SqlEditorProps) {
-    const { hasUnsavedChanges, handleEditorChange } = useSqlEditor({
+    const { handleEditorChange, handleSave } = useSqlEditor({
         initialSql: sql,
         onContentChange,
+        onSave,
         originalSql,
     });
+
+    // Cmd/Ctrl+Enter: flush the freshest editor value, then execute it.
+    const handleExecute = useCallback(
+        (value: string) => {
+            onContentChange(value);
+            onExecute?.(value);
+        },
+        [onContentChange, onExecute]
+    );
 
     return (
         <div className="flex flex-col h-full">
@@ -46,6 +59,8 @@ export function SqlEditor({
                         value={sql}
                         onChange={handleEditorChange}
                         readOnly={false}
+                        onSave={handleSave}
+                        onExecute={handleExecute}
                     />
                 </Suspense>
             </div>

@@ -1,5 +1,5 @@
 export interface QueryResult {
-    rows: any[];
+    rows: Record<string, unknown>[];
     columns?: string[];
     rowCount?: number;
     executionTime?: number;

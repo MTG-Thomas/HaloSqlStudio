@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import type { QueryResult } from "@/lib/halo-api";
+import type { QueryResult } from "@/services/api/types";
 
 export function useResultsSearch(result: QueryResult, searchTerm: string) {
     const [searchResults, setSearchResults] = useState<

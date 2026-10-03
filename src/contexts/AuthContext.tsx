@@ -7,17 +7,15 @@ import React, {
     useCallback,
 } from "react";
 import { useNavigate } from "react-router-dom";
-import type { HaloUser } from "@/services/auth/types";
 import * as authService from "@/services/auth/authService";
 import { useConfig } from "@/hooks/useConfig";
 
 interface AuthContextType {
     isAuthenticated: boolean;
-    user: HaloUser | null;
     isLoading: boolean;
     startAuth: () => Promise<void>;
-    logout: () => void;
-    handleCallback: (code: string) => Promise<boolean>;
+    logout: () => Promise<void>;
+    handleCallback: (code: string, state?: string | null) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -36,7 +34,6 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [user, setUser] = useState<HaloUser | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const navigate = useNavigate();
     const { config, isLoaded } = useConfig();
@@ -48,14 +45,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const checkAuth = () => {
             const authenticated = authService.isAuthenticated();
             setIsAuthenticated(authenticated);
-
-            if (authenticated) {
-                const currentUser = authService.getCurrentUser();
-                setUser(currentUser);
-            } else {
-                setUser(null);
-            }
-
             setIsLoading(false);
         };
 
@@ -64,7 +53,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const startAuth = async () => {
         try {
-            authService.startAuth({
+            await authService.startAuth({
                 authServer: config.authServer,
                 clientId: config.clientId,
                 redirectUri: config.redirectUri,
@@ -76,7 +65,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     const handleCallback = useCallback(
-        async (code: string): Promise<boolean> => {
+        async (code: string, state?: string | null): Promise<boolean> => {
             try {
                 setIsLoading(true);
 
@@ -86,18 +75,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                         clientId: config.clientId,
                         redirectUri: config.redirectUri,
                     },
-                    code
+                    code,
+                    state
                 );
 
                 if (success) {
                     // Re-check authentication status
                     const authenticated = authService.isAuthenticated();
                     setIsAuthenticated(authenticated);
-
-                    if (authenticated) {
-                        const currentUser = authService.getCurrentUser();
-                        setUser(currentUser);
-                    }
                 }
 
                 setIsLoading(false);
@@ -111,16 +96,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         [config.authServer, config.clientId, config.redirectUri]
     );
 
-    const logout = () => {
-        authService.logout();
-        setUser(null);
+    const logout = useCallback(async () => {
         setIsAuthenticated(false);
+        await authService.logout({
+            authServer: config.authServer,
+            clientId: config.clientId,
+            redirectUri: config.redirectUri,
+        });
         navigate("/login");
-    };
+    }, [config.authServer, config.clientId, config.redirectUri, navigate]);
 
     const value: AuthContextType = {
         isAuthenticated,
-        user,
         isLoading,
         startAuth,
         logout,

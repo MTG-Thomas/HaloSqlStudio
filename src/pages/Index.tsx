@@ -3,7 +3,6 @@ import {
     useCallback,
     useEffect,
     useRef,
-    useMemo,
     lazy,
     Suspense,
 } from "react";
@@ -11,16 +10,10 @@ import { useNavigate } from "react-router-dom";
 import { Explorer } from "@/components/Explorer";
 import { useAuth } from "@/contexts/AuthContext";
 import { useConfig } from "@/hooks/useConfig";
-import { useApi } from "@/hooks/useApi";
-import type { QueryResult } from "@/services/api/types";
 import { Button } from "@/components/ui/button";
 import { ConfigDialog } from "@/components/ConfigDialog";
-import { LogOut, RefreshCw, GripVertical } from "lucide-react";
-import {
-    useTabPersistence,
-    type PersistedTab,
-} from "@/hooks/useTabPersistence";
-import { useEditorStore } from "@/components/Editor/store/editorStore";
+import { LogOut, GripVertical, Sun, Moon } from "lucide-react";
+import { useThemeStore } from "@/components/Editor/theme";
 
 // Lazy load the Editor component to reduce initial bundle size
 const Editor = lazy(() =>
@@ -29,12 +22,27 @@ const Editor = lazy(() =>
 
 const Index = () => {
     const { isAuthenticated, logout } = useAuth();
-    const { config } = useConfig();
-    const { executeQuery, updateReport } = useApi();
+    const { config, isConfigured } = useConfig();
+    const { theme, toggleTheme } = useThemeStore();
     const navigate = useNavigate();
 
-    // Use the editor store
-    const { createReportTab } = useEditorStore();
+    const host = config.resourceServer
+        .replace("https://", "")
+        .replace("http://", "");
+    const health = !isConfigured
+        ? {
+              color: "bg-red-500",
+              label: "Not configured — open Settings to configure Halo",
+          }
+        : !isAuthenticated
+          ? {
+                color: "bg-amber-500",
+                label: `Configured for ${host} — not authenticated`,
+            }
+          : {
+                color: "bg-green-500",
+                label: `Connected to ${host}`,
+            };
 
     const [explorerWidth, setExplorerWidth] = useState(() => {
         const saved = localStorage.getItem("explorerWidth");
@@ -92,25 +100,16 @@ const Index = () => {
         }
     }, [isAuthenticated, navigate]);
 
-    const handleNewTab = useCallback(() => {
-        // This will be handled by the Editor component
-        console.log("New tab requested");
+    const handleTableSelect = useCallback(() => {
+        // Table selection is handled by the Explorer component
     }, []);
 
-    const handleTableSelect = useCallback((tableName: string) => {
-        // console.log("Table selected:", tableName);
+    const handleColumnSelect = useCallback(() => {
+        // Column selection is handled by the Explorer component
     }, []);
 
-    const handleColumnSelect = useCallback(
-        (tableName: string, columnName: string) => {
-            // console.log("Column selected:", tableName, columnName);
-        },
-        []
-    );
-
-    const handleReportSelect = useCallback((reportId: string) => {
-        // This will be handled by the Explorer component using the store
-        console.log("Report selected:", reportId);
+    const handleReportSelect = useCallback(() => {
+        // Report selection is handled by the Explorer component using the store
     }, []);
 
     // Authentication is now handled by ProtectedRoute component
@@ -163,13 +162,33 @@ const Index = () => {
 
                     <h1 className="text-lg font-semibold">Halo SQL Studio</h1>
                     <span className="text-sm text-muted-foreground">
-                        •{" "}
-                        {config.resourceServer
-                            .replace("https://", "")
-                            .replace("http://", "")}
+                        • {host}
                     </span>
+                    <span
+                        className={`h-2.5 w-2.5 rounded-full ${health.color}`}
+                        title={health.label}
+                        role="status"
+                        aria-label={health.label}
+                    />
                 </div>
                 <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={toggleTheme}
+                        className="rounded-none h-12 px-3"
+                        title={
+                            theme === "light"
+                                ? "Switch to dark theme"
+                                : "Switch to light theme"
+                        }
+                    >
+                        {theme === "light" ? (
+                            <Moon className="h-4 w-4" />
+                        ) : (
+                            <Sun className="h-4 w-4" />
+                        )}
+                    </Button>
                     <ConfigDialog />
 
                     <Button

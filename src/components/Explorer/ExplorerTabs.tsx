@@ -1,4 +1,3 @@
-import React from "react";
 import { Table, FileText } from "lucide-react";
 import { useExplorerStore } from "@/stores/explorerStore";
 

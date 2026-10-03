@@ -1,4 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, {
+    useState,
+    useEffect,
+    useCallback,
+    useRef,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -28,16 +33,42 @@ import {
     Bell,
     Terminal,
     ExternalLink,
+    Square,
+    History,
+    Share2,
 } from "lucide-react";
-import { useEditorStore } from "../store/editorStore";
+import { useEditorStore, QUERY_CANCELLED_MESSAGE } from "../store/editorStore";
 import { ReportTab } from "./ReportTab";
 import { useApi } from "@/hooks/useApi";
 import { useToast } from "@/hooks/use-toast";
+import { useIndexedDB, type QueryRecord } from "@/hooks/useIndexedDB";
 import { VariablesDialog } from "../VariablesDialog";
 import { WarningsDropdown } from "../WarningsDropdown";
 import { ReportDialog } from "../ReportDialog";
+import { HistoryDialog } from "../HistoryDialog";
+import { StatusBar } from "../StatusBar";
 import { warningRegistry, type WarningResult } from "@/lib/warnings";
+import { scanSemicolonWarning } from "../semicolonWarning";
+import {
+    buildShareUrl,
+    parseSharedSqlFromHash,
+    clearSharedSqlHash,
+} from "../share";
 import { useConfig } from "@/hooks/useConfig";
+
+function newHistoryId(): string {
+    if (
+        typeof crypto !== "undefined" &&
+        typeof crypto.randomUUID === "function"
+    ) {
+        return crypto.randomUUID();
+    }
+    return `history-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function scanAllWarnings(sql: string): WarningResult[] {
+    return [...warningRegistry.scan(sql), ...scanSemicolonWarning(sql)];
+}
 
 export function Tabs() {
     const {
@@ -50,22 +81,27 @@ export function Tabs() {
         startEditingTab,
         stopEditingTab,
         updateTab,
+        updateTabContent,
         addTab,
         saveReport,
         executeQuery,
+        cancelQuery,
         setVariables,
     } = useEditorStore();
 
     const { createOrUpdateReport, executeQuery: executeQueryApi } = useApi();
     const { toast } = useToast();
     const { config } = useConfig();
+    const { isReady: historyReady, saveQuery } = useIndexedDB();
 
     const [editingTitle, setEditingTitle] = useState("");
     const [showSaveConfirm, setShowSaveConfirm] = useState(false);
     const [showVariablesDialog, setShowVariablesDialog] = useState(false);
     const [showWarningsPanel, setShowWarningsPanel] = useState(false);
     const [showReportDialog, setShowReportDialog] = useState(false);
+    const [showHistoryDialog, setShowHistoryDialog] = useState(false);
     const [warnings, setWarnings] = useState<WarningResult[]>([]);
+    const sharedAppliedRef = useRef(false);
 
     const handleDoubleClick = (tab: {
         id: string;
@@ -105,22 +141,72 @@ export function Tabs() {
         addTab(`Query ${tabs.length + 1}`);
     };
 
-    // Test warning detection
-    useEffect(() => {
-        // Test with a simple SQL that should trigger warnings
-        const testSql = "SELECT * FROM profiles -- This is a comment";
-        const testWarnings = warningRegistry.scan(testSql);
-        console.log("Test warnings:", testWarnings);
-    }, []);
-
-    const handleExecute = async () => {
-        if (activeTabId) {
+    const runQuery = useCallback(
+        async (tabId: string) => {
+            const tab = useEditorStore.getState().getTabById(tabId);
+            if (!tab || tab.isExecuting) return;
             try {
-                await executeQuery(activeTabId, executeQueryApi);
-                toast({
-                    title: "Query executed",
-                    description: "Your query has been executed successfully.",
-                });
+                const result = await executeQuery(tabId, executeQueryApi);
+                const updated =
+                    useEditorStore.getState().getTabById(tabId);
+                if (!updated) return;
+
+                if (updated.queryError === QUERY_CANCELLED_MESSAGE) {
+                    toast({
+                        title: "Query cancelled",
+                        description: "Execution was stopped.",
+                    });
+                    return;
+                }
+
+                if (!result || result.hasError) {
+                    toast({
+                        title: "Query failed",
+                        description:
+                            updated.queryError ??
+                            result?.error ??
+                            "Failed to execute query.",
+                        variant: "destructive",
+                    });
+                } else {
+                    toast({
+                        title: "Query executed",
+                        description:
+                            "Your query has been executed successfully.",
+                    });
+                }
+
+                if (historyReady) {
+                    const record: QueryRecord = {
+                        id: newHistoryId(),
+                        title: tab.title,
+                        sql: tab.sql,
+                        executionTime: result?.executionTime,
+                        timestamp: Date.now(),
+                        lastModified: Date.now(),
+                        isPinned: false,
+                        isFavorite: false,
+                        tags: [],
+                        error:
+                            result?.hasError || !result
+                                ? (updated.queryError ??
+                                  result?.error ??
+                                  undefined)
+                                : undefined,
+                        rowCount: result?.rowCount ?? result?.rows.length,
+                        isReport: tab.isReport,
+                        reportId: tab.reportId,
+                        originalSql: tab.originalSql,
+                    };
+                    try {
+                        await saveQuery(record);
+                    } catch (error) {
+                        console.warn(
+                            "Failed to record query history:",
+                            error
+                        );
+                    }
+                }
             } catch (error) {
                 toast({
                     title: "Execution failed",
@@ -131,8 +217,84 @@ export function Tabs() {
                     variant: "destructive",
                 });
             }
-        }
+        },
+        [executeQuery, executeQueryApi, historyReady, saveQuery, toast]
+    );
+
+    const handleExecute = () => {
+        if (activeTabId) void runQuery(activeTabId);
     };
+
+    // Cmd/Ctrl+Enter from the editor carries the freshest SQL, which may
+    // not have been flushed through the autosave debounce yet.
+    const handleEditorExecute = useCallback(
+        (tabId: string, sql: string) => {
+            updateTabContent(tabId, sql);
+            void runQuery(tabId);
+        },
+        [updateTabContent, runQuery]
+    );
+
+    const handleStop = () => {
+        if (activeTabId) cancelQuery(activeTabId);
+    };
+
+    const handleShare = useCallback(async () => {
+        const tab = useEditorStore.getState().getActiveTab();
+        if (!tab || !tab.sql.trim()) {
+            toast({
+                title: "Nothing to share",
+                description: "The active tab has no SQL to share.",
+                variant: "destructive",
+            });
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(buildShareUrl(tab.sql));
+            toast({
+                title: "Share link copied",
+                description: "Opening this link loads your SQL.",
+            });
+        } catch {
+            toast({
+                title: "Copy failed",
+                description: "Could not copy the share link.",
+                variant: "destructive",
+            });
+        }
+    }, [toast]);
+
+    const handleOpenHistoryQuery = useCallback(
+        (record: QueryRecord) => {
+            addTab(record.title || "History query", record.sql);
+            setShowHistoryDialog(false);
+        },
+        [addTab]
+    );
+
+    // Load shared SQL from the location hash once on start.
+    useEffect(() => {
+        if (sharedAppliedRef.current) return;
+        sharedAppliedRef.current = true;
+        const sql = parseSharedSqlFromHash();
+        if (!sql) return;
+        const state = useEditorStore.getState();
+        const consoleTab = state.tabs.find((t) => t.id === "console");
+        if (
+            consoleTab &&
+            !consoleTab.sql.trim() &&
+            state.activeTabId === "console"
+        ) {
+            state.updateTabContent("console", sql);
+        } else {
+            state.addTab("Shared Query", sql);
+        }
+        clearSharedSqlHash();
+        toast({
+            title: "Shared query loaded",
+            description: "SQL from the share link was loaded.",
+        });
+    }, [toast]);
 
     const handleSaveClick = () => {
         setShowReportDialog(true);
@@ -181,7 +343,7 @@ export function Tabs() {
     // Scan for warnings when active tab changes or SQL changes
     useEffect(() => {
         if (activeTabId && activeTab) {
-            const newWarnings = warningRegistry.scan(activeTab.sql);
+            const newWarnings = scanAllWarnings(activeTab.sql);
             setWarnings(newWarnings);
         }
     }, [activeTabId, activeTab?.sql]);
@@ -203,12 +365,12 @@ export function Tabs() {
     }, [showWarningsPanel]);
 
     const handleFixWarning = (warningResult: WarningResult) => {
-        if (activeTabId && warningResult.warning.fix) {
+        if (activeTabId && activeTab && warningResult.warning.fix) {
             const fixedSql = warningResult.warning.fix(activeTab.sql);
             updateTab(activeTabId, { sql: fixedSql });
 
             // Re-scan for warnings after fix
-            const newWarnings = warningRegistry.scan(fixedSql);
+            const newWarnings = scanAllWarnings(fixedSql);
             setWarnings(newWarnings);
 
             toast({
@@ -222,14 +384,46 @@ export function Tabs() {
         <div className="flex flex-col h-full">
             {/* Tab Bar */}
             <div className="flex items-center bg-card border-b border-border">
-                {/* Execute button */}
+                {/* Execute / Stop button */}
+                <div className="flex items-center border-r border-border">
+                    {activeTab?.isExecuting ? (
+                        <button
+                            onClick={handleStop}
+                            className="flex items-center justify-center h-10 w-10 rounded hover:bg-accent/50 transition-colors"
+                            title="Stop query"
+                        >
+                            <Square className="h-5 w-5 text-red-500" />
+                        </button>
+                    ) : (
+                        <button
+                            onClick={handleExecute}
+                            className="flex items-center justify-center h-10 w-10 rounded hover:bg-accent/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            title="Execute query (Ctrl+Enter)"
+                        >
+                            <Play className="h-5 w-5 text-green-500" />
+                        </button>
+                    )}
+                </div>
+
+                {/* History button */}
                 <div className="flex items-center border-r border-border">
                     <button
-                        onClick={handleExecute}
-                        className="flex items-center justify-center h-10 w-10 rounded hover:bg-accent/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        title="Execute query (Ctrl+Enter)"
+                        onClick={() => setShowHistoryDialog(true)}
+                        className="flex items-center justify-center h-10 w-10 rounded hover:bg-accent/50 transition-colors"
+                        title="Query history"
                     >
-                        <Play className="h-5 w-5 text-green-500" />
+                        <History className="h-5 w-5 text-purple-500" />
+                    </button>
+                </div>
+
+                {/* Share button */}
+                <div className="flex items-center border-r border-border">
+                    <button
+                        onClick={() => void handleShare()}
+                        className="flex items-center justify-center h-10 w-10 rounded hover:bg-accent/50 transition-colors"
+                        title="Copy share link for this query"
+                    >
+                        <Share2 className="h-5 w-5 text-teal-500" />
                     </button>
                 </div>
 
@@ -473,8 +667,17 @@ export function Tabs() {
 
             {/* Tab Content */}
             <div className="flex-1 overflow-hidden bg-background">
-                {activeTab && <ReportTab key={activeTab.id} tab={activeTab} />}
+                {activeTab && (
+                    <ReportTab
+                        key={activeTab.id}
+                        tab={activeTab}
+                        onExecute={handleEditorExecute}
+                    />
+                )}
             </div>
+
+            {/* Per-tab status bar */}
+            <StatusBar />
 
             <AlertDialog
                 open={showSaveConfirm}
@@ -513,10 +716,17 @@ export function Tabs() {
             <ReportDialog
                 open={showReportDialog}
                 onOpenChange={setShowReportDialog}
-                tab={activeTab}
+                tab={activeTab ?? null}
                 onSave={() => {
                     // Refresh reports after saving
                 }}
+            />
+
+            {/* History Dialog */}
+            <HistoryDialog
+                open={showHistoryDialog}
+                onOpenChange={setShowHistoryDialog}
+                onOpenQuery={handleOpenHistoryQuery}
             />
         </div>
     );

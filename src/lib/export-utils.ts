@@ -24,38 +24,61 @@ export function exportToJSON(result: QueryResult, filename?: string): void {
 }
 
 /**
- * Export query results to CSV format
+ * Escape a single CSV field: guard against formula injection and quote
+ * fields containing commas, quotes, or line breaks.
  */
-export function exportToCSV(result: QueryResult, filename?: string): void {
+export function escapeCsvValue(value: string): string {
+    let text = value;
+    // Prefix formula-like cells so spreadsheet apps treat them as text
+    if (/^[=+\-@]/.test(text)) {
+        text = `'${text}`;
+    }
+    if (
+        text.includes(",") ||
+        text.includes('"') ||
+        text.includes("\n") ||
+        text.includes("\r")
+    ) {
+        return `"${text.replace(/"/g, '""')}"`;
+    }
+    return text;
+}
+
+/**
+ * Build the CSV document for query results as a string.
+ * Pure and DOM-free so it can be unit tested; the download wrapper below
+ * handles the browser-only Blob part.
+ * @throws Error when the result carries an error
+ */
+export function buildCsvContent(result: QueryResult): string {
     // Don't export if there's an error
     if (result.hasError) {
         throw new Error("Cannot export results with errors");
     }
 
-    const headers = result.columns.map((col) => col.name).join(",");
+    const headers = result.columns
+        .map((col) => escapeCsvValue(col.name))
+        .join(",");
     const rows = result.rows
         .map((row) =>
             result.columns
                 .map((col) => {
-                    const value = row[col.name];
+                    const value: unknown = row[col.name];
                     if (value === null || value === undefined) return "";
-
-                    // Escape commas and quotes in CSV
-                    const stringValue = String(value);
-                    if (
-                        stringValue.includes(",") ||
-                        stringValue.includes('"') ||
-                        stringValue.includes("\n")
-                    ) {
-                        return `"${stringValue.replace(/"/g, '""')}"`;
-                    }
-                    return stringValue;
+                    return escapeCsvValue(String(value));
                 })
                 .join(",")
         )
         .join("\n");
 
-    const csv = `${headers}\n${rows}`;
+    return `${headers}\n${rows}`;
+}
+
+/**
+ * Export query results to CSV format
+ */
+export function exportToCSV(result: QueryResult, filename?: string): void {
+    const csv = buildCsvContent(result);
     const blob = new Blob([csv], { type: "text/csv" });
     downloadBlob(blob, filename || `query-result-${Date.now()}.csv`);
 }
@@ -78,12 +101,12 @@ function downloadBlob(blob: Blob, filename: string): void {
  * Copy a row to clipboard
  */
 export async function copyRowToClipboard(
-    row: any,
-    columns: any[]
+    row: Record<string, string | number | boolean | null | undefined>,
+    columns: { name: string }[]
 ): Promise<boolean> {
     try {
         const rowData = columns
-            .map((col) => `${col.name}: ${row[col.name] || "NULL"}`)
+            .map((col) => `${col.name}: ${row[col.name] ?? "NULL"}`)
             .join("\t");
         await navigator.clipboard.writeText(rowData);
         return true;
@@ -103,7 +126,9 @@ export async function copyResultsToClipboard(
         const headers = result.columns.map((col) => col.name).join("\t");
         const rows = result.rows
             .map((row) =>
-                result.columns.map((col) => row[col.name] || "NULL").join("\t")
+                result.columns
+                    .map((col) => row[col.name] ?? "NULL")
+                    .join("\t")
             )
             .join("\n");
 

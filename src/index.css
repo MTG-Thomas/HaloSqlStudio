@@ -50,6 +50,46 @@
         --info: 217 91% 60%;
 
         --radius: 0.375rem;
+
+        color-scheme: dark;
+    }
+
+    /* Light theme overrides (dark is the default). Toggled via the
+       `light` class on <html>; defaults to prefers-color-scheme. */
+    .light {
+        --background: 0 0% 100%;
+        --foreground: 222 47% 11%;
+
+        --card: 0 0% 100%;
+        --card-foreground: 222 47% 11%;
+
+        --popover: 0 0% 100%;
+        --popover-foreground: 222 47% 11%;
+
+        --primary: 217 91% 60%;
+        --primary-foreground: 0 0% 100%;
+
+        --secondary: 220 14% 96%;
+        --secondary-foreground: 222 47% 11%;
+
+        --muted: 220 14% 96%;
+        --muted-foreground: 220 9% 46%;
+
+        --accent: 220 14% 93%;
+        --accent-foreground: 222 47% 11%;
+
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 100%;
+
+        --border: 220 13% 91%;
+        --input: 220 13% 91%;
+        --ring: 217 91% 60%;
+
+        --success: 142 71% 45%;
+        --warning: 38 92% 50%;
+        --info: 217 91% 60%;
+
+        color-scheme: light;
     }
 }
 
@@ -138,10 +178,56 @@
         background-color: rgba(60, 131, 246, 0.1) !important;
     }
 
+    /* NULL vs empty-string cell styling */
+    .ag-theme-quartz .ag-null-value {
+        color: hsl(var(--muted-foreground));
+        font-style: italic;
+    }
+
+    /* Empty strings render blank, visually distinct from NULL above. */
+    .ag-theme-quartz .ag-empty-value {
+        display: inline-block;
+        min-width: 1ch;
+    }
+
+    /* AG Grid light theme overrides */
+    .light .ag-theme-quartz {
+        --ag-row-hover-color: rgba(60, 131, 246, 0.08);
+        --ag-selected-row-background-color: rgba(60, 131, 246, 0.15);
+        --ag-border-color: #e5e7eb;
+        --ag-header-background-color: #f3f4f6;
+        --ag-background-color: #ffffff;
+        --ag-foreground-color: #1f2328;
+    }
+
+    .light .ag-theme-quartz .ag-header-cell {
+        color: #1f2328 !important;
+    }
+
+    .light .ag-theme-quartz .ag-row {
+        border-bottom: 1px solid #e5e7eb !important;
+    }
+
+    .light .ag-theme-quartz .ag-row:hover {
+        background-color: rgba(60, 131, 246, 0.08) !important;
+    }
+
     /* Native Date Input Styling for Dark Theme */
     input[type="date"] {
         color-scheme: dark;
         color: hsl(var(--foreground));
+    }
+
+    .light input[type="date"] {
+        color-scheme: light;
+    }
+
+    .light input[type="date"]::-webkit-calendar-picker-indicator {
+        filter: none;
+    }
+
+    .light input[type="date"]::-webkit-calendar-picker-indicator:hover {
+        filter: none;
     }
 
     /* Webkit-specific date input styling */

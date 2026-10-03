@@ -23,6 +23,21 @@ export interface Tab {
 // Import the QueryResult type
 import type { QueryResult } from "@/services/api/types";
 
+export const QUERY_CANCELLED_MESSAGE = "Query cancelled";
+
+/** One in-flight execution per tab so the Stop button can cancel it. */
+const abortControllers = new Map<string, AbortController>();
+
+function newTabId(): string {
+    if (
+        typeof crypto !== "undefined" &&
+        typeof crypto.randomUUID === "function"
+    ) {
+        return `query-${crypto.randomUUID()}`;
+    }
+    return `query-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 interface EditorState {
     // State
     tabs: Tab[];
@@ -53,8 +68,12 @@ interface EditorState {
     // Query execution actions
     executeQuery: (
         tabId: string,
-        executeQueryFn: (sql: string) => Promise<QueryResult>
-    ) => Promise<void>;
+        executeQueryFn: (
+            sql: string,
+            signal?: AbortSignal
+        ) => Promise<QueryResult>
+    ) => Promise<QueryResult | null>;
+    cancelQuery: (tabId: string) => void;
     clearQueryResult: (tabId: string) => void;
 
     // Search actions
@@ -97,7 +116,7 @@ export const useEditorStore = create<EditorState>()(
             // Actions
             addTab: (title, sql = "", metadata = {}) => {
                 const newTab: Tab = {
-                    id: `query-${Date.now()}`,
+                    id: newTabId(),
                     title,
                     sql,
                     isPinned: false,
@@ -164,7 +183,7 @@ export const useEditorStore = create<EditorState>()(
             // Report-specific actions
             createReportTab: (report) => {
                 const newTab: Tab = {
-                    id: `query-${Date.now()}`,
+                    id: newTabId(),
                     title: `Report: ${report.name}`,
                     sql: report.sql,
                     isPinned: false,
@@ -218,7 +237,12 @@ export const useEditorStore = create<EditorState>()(
             // Query execution actions
             executeQuery: async (tabId, executeQueryFn) => {
                 const tab = get().getTabById(tabId);
-                if (!tab) return;
+                if (!tab) return null;
+
+                // Cancel any previous in-flight execution for this tab.
+                abortControllers.get(tabId)?.abort();
+                const controller = new AbortController();
+                abortControllers.set(tabId, controller);
 
                 set((state) => ({
                     tabs: state.tabs.map((t) =>
@@ -233,6 +257,7 @@ export const useEditorStore = create<EditorState>()(
                     ),
                 }));
 
+                const startedAt = Date.now();
                 try {
                     // Replace Halo variables in SQL before execution
                     const state = get();
@@ -241,31 +266,69 @@ export const useEditorStore = create<EditorState>()(
                         state.variables
                     );
 
-                    const result = await executeQueryFn(processedSql);
+                    const result = await executeQueryFn(
+                        processedSql,
+                        controller.signal
+                    );
+                    if (controller.signal.aborted) return null;
+                    const withTime: QueryResult =
+                        result.executionTime == null
+                            ? {
+                                  ...result,
+                                  executionTime: Date.now() - startedAt,
+                              }
+                            : result;
                     set((state) => ({
                         tabs: state.tabs.map((t) =>
                             t.id === tabId
                                 ? {
                                       ...t,
-                                      queryResult: result,
+                                      queryResult: withTime,
                                       isExecuting: false,
                                   }
                                 : t
                         ),
                     }));
+                    return withTime;
                 } catch (error) {
+                    if (controller.signal.aborted) return null;
+                    const queryError =
+                        error instanceof Error
+                            ? error.message
+                            : "Failed to execute query";
                     set((state) => ({
                         tabs: state.tabs.map((t) =>
                             t.id === tabId
                                 ? {
                                       ...t,
-                                      queryError: error.message,
+                                      queryError,
                                       isExecuting: false,
                                   }
                                 : t
                         ),
                     }));
+                    return null;
+                } finally {
+                    if (abortControllers.get(tabId) === controller) {
+                        abortControllers.delete(tabId);
+                    }
                 }
+            },
+
+            cancelQuery: (tabId) => {
+                abortControllers.get(tabId)?.abort();
+                abortControllers.delete(tabId);
+                set((state) => ({
+                    tabs: state.tabs.map((t) =>
+                        t.id === tabId && t.isExecuting
+                            ? {
+                                  ...t,
+                                  isExecuting: false,
+                                  queryError: QUERY_CANCELLED_MESSAGE,
+                              }
+                            : t
+                    ),
+                }));
             },
 
             clearQueryResult: (tabId) => {

@@ -1,6 +1,4 @@
-import React from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Info, Zap, CheckCircle } from "lucide-react";
 import type { WarningResult } from "@/lib/warnings";
 

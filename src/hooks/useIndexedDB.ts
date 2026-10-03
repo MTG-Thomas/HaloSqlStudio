@@ -4,7 +4,7 @@ export interface QueryRecord {
     id: string;
     title: string;
     sql: string;
-    result?: any;
+    result?: unknown;
     executionTime?: number;
     timestamp: number;
     lastModified: number;
@@ -195,6 +195,17 @@ export function useIndexedDB() {
         return allQueries.filter((query) => query.isFavorite);
     }, [getAllQueries]);
 
+    // Get most recent queries first, capped at `limit`
+    const getRecentQueries = useCallback(
+        async (limit = 50): Promise<QueryRecord[]> => {
+            const allQueries = await getAllQueries();
+            return allQueries
+                .sort((a, b) => b.timestamp - a.timestamp)
+                .slice(0, limit);
+        },
+        [getAllQueries]
+    );
+
     return {
         isReady,
         saveQuery,
@@ -204,5 +215,6 @@ export function useIndexedDB() {
         loadTabsState,
         searchQueries,
         getFavoriteQueries,
+        getRecentQueries,
     };
 }

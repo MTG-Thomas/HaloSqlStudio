@@ -1,9 +1,7 @@
-import React from "react";
 import { Database, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchBox } from "@/components/ui/search-box";
 import { useExplorerStore } from "@/stores/explorerStore";
-import { useApi } from "@/hooks/useApi";
 
 export function ExplorerHeader() {
     const {
@@ -15,8 +13,6 @@ export function ExplorerHeader() {
         isLoadingTables,
         isLoadingReports,
     } = useExplorerStore();
-
-    const { getTables, getReports } = useApi();
 
     const handleRefresh = async () => {
         if (activeTab === "tables") {

@@ -18,7 +18,7 @@ const MAX_TABS = 50; // Increased limit since we're using IndexedDB
 const SAVE_DEBOUNCE_MS = 2000; // 2 second debounce for autosave
 
 export function useTabPersistence() {
-    const { isReady, saveTabsState, loadTabsState, saveQuery } = useIndexedDB();
+    const { isReady, saveTabsState, loadTabsState } = useIndexedDB();
     const [tabs, setTabs] = useState<QueryRecord[]>([]);
     const [activeTabId, setActiveTabId] = useState<string>("console");
     const [isLoaded, setIsLoaded] = useState(false);

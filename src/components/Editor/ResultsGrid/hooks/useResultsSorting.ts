@@ -32,8 +32,8 @@ export function useResultsSorting(result: QueryResult) {
         if (!result?.rows || !sortConfig) return result?.rows || [];
 
         const sorted = [...result.rows].sort((a, b) => {
-            const aValue = a[sortConfig.key];
-            const bValue = b[sortConfig.key];
+            const aValue: unknown = a[sortConfig.key];
+            const bValue: unknown = b[sortConfig.key];
 
             // Handle null/undefined values
             if (aValue === null || aValue === undefined) return 1;

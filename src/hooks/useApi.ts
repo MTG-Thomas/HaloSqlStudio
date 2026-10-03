@@ -30,7 +30,11 @@ export function useApi() {
 
                 if (!success) {
                     // Refresh failed - clear auth and redirect to login
-                    authService.logout();
+                    void authService.logout({
+                        authServer: config.authServer,
+                        clientId: config.clientId,
+                        redirectUri: config.redirectUri,
+                    });
                 }
 
                 return success;
@@ -142,8 +146,7 @@ export function useApi() {
                 string,
                 { name: string; columns: { name: string; data_type: string }[] }
             >();
-            result.rows.forEach(
-                (row: Record<string, string>, index: number) => {
+            result.rows.forEach((row: Record<string, string>) => {
                     const tableName = row.name;
                     const column = {
                         name: row.column_name,
@@ -249,7 +252,12 @@ export function useApi() {
             setError(null);
 
             try {
-                const body: any = {
+                const body: {
+                    sql: string;
+                    name: string;
+                    description: string;
+                    id?: number;
+                } = {
                     sql: reportData.sql,
                     name: reportData.name,
                     description: reportData.description || "",
@@ -266,16 +274,22 @@ export function useApi() {
                 });
 
                 // The API returns either an array with the created/updated report or a single object
+                const payload = result as unknown as
+                    | { id?: string | number }
+                    | Array<{ id?: string | number }>;
                 if (
-                    Array.isArray(result) &&
-                    result.length > 0 &&
-                    result[0].id
+                    Array.isArray(payload) &&
+                    payload.length > 0 &&
+                    payload[0].id != null
                 ) {
                     // Array format: [{ id: 123 }]
-                    return { id: result[0].id.toString() };
-                } else if (result && typeof result === "object" && result.id) {
+                    return { id: payload[0].id.toString() };
+                } else if (
+                    !Array.isArray(payload) &&
+                    payload.id != null
+                ) {
                     // Single object format: { id: 123 }
-                    return { id: result.id.toString() };
+                    return { id: payload.id.toString() };
                 } else {
                     throw new Error("Invalid response format from server");
                 }
