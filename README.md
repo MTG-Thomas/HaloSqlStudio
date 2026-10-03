@@ -93,6 +93,14 @@ Want to host Halo SQL Studio yourself? It's easy!
     - Or connect the repo in the Cloudflare dashboard with build command `npm run build`
     - **Any static host**: Build with `npm run build` and upload the `dist` folder
 
+### Production (sql.midtowntg.com)
+
+The production deployment lives at <https://sql.midtowntg.com>. To hook it up to a tenant:
+
+1. In Halo, open the API application and set the **Redirect URI** to `https://sql.midtowntg.com/auth/callback`.
+2. Add `https://sql.midtowntg.com` to the **CORS whitelist**.
+3. Open the app, enter the tenant, auth/resource servers, and client ID, then log in.
+
 ### Configuration
 
 When self-hosting, update your Halo application's **Redirect URI** and **CORS Whitelist** to match your domain:
