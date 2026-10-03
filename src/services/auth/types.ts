@@ -4,6 +4,8 @@ export interface HaloTokens {
     expires_in: number;
     token_type: string;
     scope: string;
+    /** Epoch milliseconds when the tokens were obtained (stamped by saveTokens). */
+    obtained_at?: number;
 }
 
 export interface HaloUser {

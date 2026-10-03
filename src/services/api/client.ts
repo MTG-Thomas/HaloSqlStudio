@@ -1,5 +1,4 @@
 import type { ApiResponse } from "./types";
-import * as authService from "@/services/auth/authService";
 
 export interface ApiClientConfig {
     baseUrl: string;
@@ -19,6 +18,14 @@ export class ApiClient {
         endpoint: string,
         options: RequestInit = {}
     ): Promise<ApiResponse> {
+        return this.request(endpoint, options, false);
+    }
+
+    private async request(
+        endpoint: string,
+        options: RequestInit,
+        retried: boolean
+    ): Promise<ApiResponse> {
         try {
             const token = await this.config.getAccessToken();
             if (!token) {
@@ -37,41 +44,46 @@ export class ApiClient {
             });
 
             if (!response.ok) {
-                if (response.status === 401) {
-                    // Try to refresh the token
+                if (response.status === 401 && !retried) {
+                    // Try to refresh the token (single-flight in authService)
                     const refreshed = await this.config.onTokenRefresh();
                     if (refreshed) {
-                        console.log(
-                            "Token refresh successful, retrying request..."
-                        );
-                        // Retry the request with the new token
-                        return this.makeRequest(endpoint, options);
-                    } else {
-                        console.error(
-                            "Token refresh failed, clearing authentication and redirecting..."
-                        );
-                        // Token refresh failed - clear auth and redirect immediately
-                        this.config.onAuthExpired();
-                        // This will redirect to login, so we return a rejected promise
-                        // that will never resolve
-                        return new Promise((_, reject) => {
-                            // This promise will never resolve because the page will redirect
-                            reject(
-                                new Error(
-                                    "Authentication expired - redirecting to login"
-                                )
-                            );
-                        });
+                        // Retry the request once with the new token
+                        return this.request(endpoint, options, true);
                     }
+                    console.error(
+                        "Token refresh failed, clearing authentication and redirecting..."
+                    );
                 }
 
-                // Handle other HTTP errors
-                const errorText = await response.text();
+                if (response.status === 401) {
+                    // Refresh failed or already retried: expire the session
+                    this.config.onAuthExpired();
+                    throw new Error(
+                        "Authentication expired - redirecting to login"
+                    );
+                }
+
+                // Handle other HTTP errors (keep a truncated server body)
+                let detail = "";
+                try {
+                    const errorText = (await response.text()).trim();
+                    if (errorText) {
+                        detail =
+                            errorText.length > 500
+                                ? `${errorText.slice(0, 500)}…`
+                                : errorText;
+                    }
+                } catch {
+                    // Ignore body-read failures; the status is enough
+                }
                 console.error(
                     `API request failed: ${response.status} ${response.statusText}`,
-                    errorText
+                    detail
                 );
-                throw new Error(`API request failed: ${response.statusText}`);
+                throw new Error(
+                    `API request failed: ${response.statusText}${detail ? ` - ${detail}` : ""}`
+                );
             }
 
             return response.json();

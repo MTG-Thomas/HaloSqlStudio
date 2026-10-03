@@ -10,8 +10,7 @@ interface ResultsGridProps {
 }
 
 export function ResultsGrid({ result, loading, error }: ResultsGridProps) {
-    const { activeTabId, setGlobalFilter, clearGlobalFilter } =
-        useEditorStore();
+    const { activeTabId, setGlobalFilter } = useEditorStore();
 
     // Get the current tab's global filter from the store
     const currentTab = useEditorStore((state) =>

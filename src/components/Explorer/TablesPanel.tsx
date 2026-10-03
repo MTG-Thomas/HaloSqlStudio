@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { ChevronRight, ChevronDown, Table, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useExplorerStore } from "@/stores/explorerStore";

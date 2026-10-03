@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from "react";
+import { useEffect, useCallback } from "react";
 import { useExplorerStore } from "@/stores/explorerStore";
 import { useApi } from "@/hooks/useApi";
 import { ExplorerHeader } from "./ExplorerHeader";

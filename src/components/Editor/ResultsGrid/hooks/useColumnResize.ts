@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
-import type { QueryResult } from "@/lib/halo-api";
+import { useState, useCallback, useEffect } from "react";
+import type { QueryResult } from "@/services/api/types";
 
 export function useColumnResize(result: QueryResult) {
     const [columnWidths, setColumnWidths] = useState<{ [key: string]: number }>(

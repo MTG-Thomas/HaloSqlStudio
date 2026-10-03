@@ -15,13 +15,18 @@ const ResultsGrid = lazy(() =>
 
 interface ReportTabProps {
     tab: Tab;
+    onExecute?: (tabId: string, sql: string) => void;
 }
 
-export const ReportTab: React.FC<ReportTabProps> = ({ tab }) => {
+export const ReportTab: React.FC<ReportTabProps> = ({ tab, onExecute }) => {
     const { updateTabContent } = useEditorStore();
 
     const handleContentChange = (sql: string) => {
         updateTabContent(tab.id, sql);
+    };
+
+    const handleExecute = (sql: string) => {
+        onExecute?.(tab.id, sql);
     };
 
     return (
@@ -32,6 +37,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ tab }) => {
                     <SqlEditor
                         sql={tab.sql}
                         onContentChange={handleContentChange}
+                        onExecute={handleExecute}
                         isReport={tab.isReport}
                         originalSql={tab.originalSql}
                     />
@@ -57,7 +63,7 @@ export const ReportTab: React.FC<ReportTabProps> = ({ tab }) => {
                         <ResultsGrid
                             result={tab.queryResult || null}
                             loading={tab.isExecuting || false}
-                            error={tab.queryError || null}
+                            error={tab.queryError || undefined}
                         />
                     </Suspense>
                 </ResizablePanel>

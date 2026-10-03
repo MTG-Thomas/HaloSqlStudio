@@ -19,12 +19,17 @@ import {
 } from "lucide-react";
 import { useConfig } from "@/hooks/useConfig";
 import type { HaloConfig } from "@/hooks/useConfig";
+import { validateServerUrl } from "@/stores/configStore";
 
 export const ConfigDialog: React.FC = () => {
     const { config, isConfigured, saveConfig, resetConfig } = useConfig();
     const [isOpen, setIsOpen] = useState(false);
     const [localConfig, setLocalConfig] = useState<HaloConfig>(config);
     const [showClientSecret, setShowClientSecret] = useState(false);
+    const [errors, setErrors] = useState<{
+        resourceServer?: string;
+        authServer?: string;
+    }>({});
 
     // Update localConfig when config changes
     useEffect(() => {
@@ -32,17 +37,28 @@ export const ConfigDialog: React.FC = () => {
     }, [config]);
 
     const handleSave = () => {
+        const nextErrors: typeof errors = {};
+        const resourceError = validateServerUrl(localConfig.resourceServer);
+        if (resourceError) nextErrors.resourceServer = resourceError;
+        const authError = validateServerUrl(localConfig.authServer);
+        if (authError) nextErrors.authServer = authError;
+        setErrors(nextErrors);
+        if (Object.keys(nextErrors).length > 0) {
+            return;
+        }
         saveConfig(localConfig);
         setIsOpen(false);
     };
 
     const handleCancel = () => {
         setLocalConfig(config);
+        setErrors({});
         setIsOpen(false);
     };
 
     const handleReset = () => {
         resetConfig();
+        setErrors({});
         setLocalConfig({
             tenant: "",
             authServer: "",
@@ -65,10 +81,19 @@ export const ConfigDialog: React.FC = () => {
 
         // Auto-fill Auth Server when Resource Server is entered
         if (field === "resourceServer" && value.trim()) {
-            updates.authServer = `${value.trim()}/auth`;
+            updates.authServer = `${value.trim().replace(/\/+$/, "")}/auth`;
         }
 
         setLocalConfig((prev) => ({ ...prev, ...updates }));
+        // Clear the field's validation error while editing
+        if (field === "resourceServer" || field === "authServer") {
+            setErrors((prev) => {
+                if (!prev[field]) return prev;
+                const next = { ...prev };
+                delete next[field];
+                return next;
+            });
+        }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -145,6 +170,14 @@ export const ConfigDialog: React.FC = () => {
                             className="col-span-3"
                         />
                     </div>
+                    {errors.resourceServer && (
+                        <div className="grid grid-cols-4 gap-4">
+                            <div></div>
+                            <div className="col-span-3 text-xs text-destructive">
+                                {errors.resourceServer}
+                            </div>
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-4 items-center gap-4">
                         <Label htmlFor="authServer" className="text-right">
@@ -161,6 +194,14 @@ export const ConfigDialog: React.FC = () => {
                             className="col-span-3"
                         />
                     </div>
+                    {errors.authServer && (
+                        <div className="grid grid-cols-4 gap-4">
+                            <div></div>
+                            <div className="col-span-3 text-xs text-destructive">
+                                {errors.authServer}
+                            </div>
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-4 items-center gap-4">
                         <Label htmlFor="clientId" className="text-right">

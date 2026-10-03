@@ -4,29 +4,72 @@ import {
     useEffect,
     Suspense,
     lazy,
-    useState,
 } from "react";
-import type { editor } from "monaco-editor";
+import type { editor, Position } from "monaco-editor";
 import * as monaco from "monaco-editor";
+import { loader } from "@monaco-editor/react";
+import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import { useMonacoSetup } from "./hooks/useMonacoSetup";
-import type { TableInfo } from "@/services/api/types";
+import { useExplorerStore } from "@/stores/explorerStore";
+import { useThemeStore } from "../theme";
+
+// Use the bundled Monaco build instead of the CDN: the production
+// Content-Security-Policy only allows scripts from 'self' and blob:.
+loader.config({ monaco });
+self.MonacoEnvironment = {
+    getWorker: () => new editorWorker(),
+};
 
 // Lazy load Monaco Editor to reduce initial bundle size
 const Editor = lazy(() => import("@monaco-editor/react"));
 
-// Extend Window interface for global table access
-declare global {
-    interface Window {
-        __HALO_TABLES__: TableInfo[];
-        monaco: typeof monaco;
-    }
+// The SQL completion provider is registered once per page load; it reads
+// live table data from the explorer store on every invocation.
+let sqlCompletionRegistered = false;
+
+interface HaloVariableSuggestion {
+    name: string;
+    detail: string;
+    documentation: string;
 }
+
+const HALO_VARIABLES: HaloVariableSuggestion[] = [
+    {
+        name: "$agentid",
+        detail: "Halo variable",
+        documentation:
+            "Current agent ID. Leave blank to use the logged-in user.",
+    },
+    {
+        name: "$siteid",
+        detail: "Halo variable",
+        documentation:
+            "Current site ID. Leave blank to use the logged-in user.",
+    },
+    {
+        name: "$clientid",
+        detail: "Halo variable",
+        documentation:
+            "Current client ID. Leave blank to use the logged-in user.",
+    },
+    {
+        name: "@startdate",
+        detail: "Halo variable",
+        documentation: "Report start date parameter.",
+    },
+    {
+        name: "@enddate",
+        detail: "Halo variable",
+        documentation: "Report end date parameter.",
+    },
+];
 
 interface MonacoWrapperProps {
     value: string;
     onChange: (value: string | undefined) => void;
     readOnly: boolean;
-    onSave: () => void;
+    onSave?: () => void;
+    onExecute?: (value: string) => void;
 }
 
 export function MonacoWrapper({
@@ -34,11 +77,29 @@ export function MonacoWrapper({
     onChange,
     readOnly,
     onSave,
+    onExecute,
 }: MonacoWrapperProps) {
     const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
-    const [completionProvider, setCompletionProvider] =
-        useState<monaco.IDisposable | null>(null);
+    const onExecuteRef = useRef(onExecute);
+    const onSaveRef = useRef(onSave);
+    const theme = useThemeStore((state) => state.theme);
+    const monacoTheme = theme === "light" ? "vs" : "vs-dark";
     const { setupMonaco } = useMonacoSetup();
+
+    useEffect(() => {
+        onExecuteRef.current = onExecute;
+    }, [onExecute]);
+
+    // Keybindings are registered once at mount, so the save callback must
+    // be read through a ref to stay current as the SQL changes.
+    useEffect(() => {
+        onSaveRef.current = onSave;
+    }, [onSave]);
+
+    // Apply light/dark theme changes to a mounted editor.
+    useEffect(() => {
+        editorRef.current?.updateOptions({ theme: monacoTheme });
+    }, [monacoTheme]);
 
     const handleEditorDidMount = useCallback(
         (editor: editor.IStandaloneCodeEditor) => {
@@ -47,22 +108,27 @@ export function MonacoWrapper({
             // Setup Monaco with our custom configuration
             setupMonaco(editor);
 
-            // Listen for custom save and execute events using command service
             try {
                 editor.addCommand(
                     monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
                     () => {
-                        onSave();
+                        onSaveRef.current?.();
+                    }
+                );
+                editor.addCommand(
+                    monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+                    () => {
+                        onExecuteRef.current?.(editor.getValue());
                     }
                 );
             } catch (error) {
                 console.warn("Failed to add command binding:", error);
             }
         },
-        [setupMonaco, onSave]
+        [setupMonaco]
     );
 
-    // Cleanup editor and completion provider on unmount
+    // Cleanup editor on unmount
     useEffect(() => {
         const editor = editorRef.current;
 
@@ -73,15 +139,6 @@ export function MonacoWrapper({
             }
         };
     }, []);
-
-    // Cleanup completion provider when it changes
-    useEffect(() => {
-        return () => {
-            if (completionProvider) {
-                completionProvider.dispose();
-            }
-        };
-    }, [completionProvider]);
 
     const handleEditorChange = useCallback(
         (value: string | undefined) => {
@@ -96,6 +153,7 @@ export function MonacoWrapper({
                 height="100%"
                 defaultLanguage="sql"
                 value={value}
+                theme={monacoTheme}
                 onChange={handleEditorChange}
                 onMount={handleEditorDidMount}
                 beforeMount={(monaco) => {
@@ -106,11 +164,55 @@ export function MonacoWrapper({
                         colors: {},
                     });
 
+                    if (sqlCompletionRegistered) return;
+                    sqlCompletionRegistered = true;
+
                     // Register completion provider for SQL language
                     const completionProvider = {
-                        provideCompletionItems: (model, position) => {
+                        provideCompletionItems: (
+                            model: editor.ITextModel,
+                            position: Position
+                        ) => {
                             const suggestions: monaco.languages.CompletionItem[] =
                                 [];
+
+                            // Halo variables ($agentid, @startdate, ...).
+                            // Monaco's word detection skips $/@ prefixes, so
+                            // match the prefix explicitly from the line text.
+                            const linePrefix = model
+                                .getLineContent(position.lineNumber)
+                                .slice(0, position.column - 1);
+                            const varMatch =
+                                linePrefix.match(/([$@][A-Za-z0-9_]*)$/);
+                            if (varMatch) {
+                                const prefix =
+                                    varMatch[1].toLowerCase();
+                                const varRange = {
+                                    startLineNumber: position.lineNumber,
+                                    startColumn:
+                                        position.column - varMatch[1].length,
+                                    endLineNumber: position.lineNumber,
+                                    endColumn: position.column,
+                                };
+                                HALO_VARIABLES.filter((variable) =>
+                                    variable.name
+                                        .toLowerCase()
+                                        .startsWith(prefix)
+                                ).forEach((variable) => {
+                                    suggestions.push({
+                                        label: variable.name,
+                                        kind: monaco.languages
+                                            .CompletionItemKind.Variable,
+                                        insertText: variable.name,
+                                        detail: variable.detail,
+                                        sortText: `A${variable.name}`,
+                                        range: varRange,
+                                        documentation: {
+                                            value: variable.documentation,
+                                        },
+                                    });
+                                });
+                            }
 
                             // Get the current word being typed - more reliable approach
                             const word = model.getWordAtPosition(position);
@@ -136,7 +238,7 @@ export function MonacoWrapper({
 
                             // Skip if currentWord is too short (less than 1 character)
                             if (currentWord.length < 1) {
-                                return { suggestions: [] };
+                                return { suggestions };
                             }
 
                             // Create a range for the current word position
@@ -198,9 +300,11 @@ export function MonacoWrapper({
                                 "ALL",
                             ];
 
-                            // Add table names FIRST - highest priority
-                            const currentTables = window.__HALO_TABLES__ || [];
-                            currentTables.forEach((table: TableInfo) => {
+                            // Add table names FIRST - highest priority.
+                            // Read live from the explorer store subscription.
+                            const currentTables =
+                                useExplorerStore.getState().tables;
+                            currentTables.forEach((table) => {
                                 const tableName = table.name;
                                 const tableNameLower = tableName.toLowerCase();
 
@@ -295,13 +399,11 @@ export function MonacoWrapper({
                         },
                     };
 
-                    // Register completion provider and store the disposable
-                    const disposable =
-                        monaco.languages.registerCompletionItemProvider(
-                            "sql",
-                            completionProvider
-                        );
-                    setCompletionProvider(disposable);
+                    // Register completion provider once for the SQL language
+                    monaco.languages.registerCompletionItemProvider(
+                        "sql",
+                        completionProvider
+                    );
                 }}
                 options={{
                     padding: { top: 24, bottom: 24 },

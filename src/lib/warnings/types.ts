@@ -15,13 +15,13 @@ export interface CodeWarning {
     lineNumbers?: number[];
 
     // Additional context data
-    context?: Record<string, any>;
+    context?: Record<string, unknown>;
 }
 
 export interface WarningResult {
     warning: CodeWarning;
     lineNumbers: number[];
-    context?: Record<string, any>;
+    context?: Record<string, unknown>;
 }
 
 export interface WarningRegistry {

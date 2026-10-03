@@ -14,25 +14,17 @@ const AuthCallback: React.FC = () => {
         const processCallback = async () => {
             // Prevent multiple processing attempts
             if (hasProcessed.current) {
-                console.log("AuthCallback: Already processed, skipping");
                 return;
             }
 
             // Prevent concurrent processing
             if (processingRef.current) {
-                console.log("AuthCallback: Already processing, skipping");
                 return;
             }
 
             const code = searchParams.get("code");
             const error = searchParams.get("error");
-
-            console.log("AuthCallback: Effect triggered", {
-                code: code ? "present" : "missing",
-                error: error || "none",
-                hasProcessed: hasProcessed.current,
-                isProcessing: processingRef.current,
-            });
+            const state = searchParams.get("state");
 
             if (error) {
                 console.error("OAuth error:", error);
@@ -50,13 +42,12 @@ const AuthCallback: React.FC = () => {
                 return;
             }
 
-            console.log("AuthCallback: Processing authorization code");
             hasProcessed.current = true;
             processingRef.current = true;
 
             try {
                 // Process the callback - this will update the auth state
-                await handleCallback(code);
+                await handleCallback(code, state);
             } finally {
                 processingRef.current = false;
             }
@@ -66,7 +57,6 @@ const AuthCallback: React.FC = () => {
 
         // Cleanup function to handle component unmounting
         return () => {
-            console.log("AuthCallback: Component unmounting, cleaning up");
             // Reset the processing flag if component unmounts during processing
             processingRef.current = false;
         };
@@ -75,9 +65,6 @@ const AuthCallback: React.FC = () => {
     // Watch for authentication state changes and redirect when authenticated
     useEffect(() => {
         if (isAuthenticated) {
-            console.log(
-                "AuthCallback: User authenticated, redirecting to home"
-            );
             navigate("/", { replace: true });
         }
     }, [isAuthenticated, navigate]);
