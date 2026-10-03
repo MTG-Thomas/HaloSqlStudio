@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { ConfigDialog } from "@/components/ConfigDialog";
 import { LogOut, GripVertical, Sun, Moon } from "lucide-react";
 import { useThemeStore } from "@/components/Editor/theme";
+import { WebMCPBridge } from "@/webmcp/bridge";
 
 // Lazy load the Editor component to reduce initial bundle size
 const Editor = lazy(() =>
@@ -116,6 +117,7 @@ const Index = () => {
 
     return (
         <div className="h-screen flex bg-background text-foreground">
+            <WebMCPBridge />
             {/* Header */}
             <div className="absolute top-0 left-0 right-0 h-12 bg-background border-b flex items-center justify-between px-4 z-10">
                 <div className="flex items-center gap-2">
