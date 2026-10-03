@@ -88,10 +88,9 @@ Want to host Halo SQL Studio yourself? It's easy!
 ### Quick Deploy
 
 1. **Fork this repository** on GitHub
-2. **Deploy to your preferred platform:**
-    - **Vercel**: Connect your fork and deploy with one click
-    - **Netlify**: Connect your fork and deploy automatically
-    - **GitHub Pages**: Enable in your fork's settings
+2. **Deploy to Cloudflare Workers** (assets-only worker, configured by `cloudflare.config.ts` in the repo):
+    - From your machine: `npx cf deploy` (sign in first with `cf auth login`)
+    - Or connect the repo in the Cloudflare dashboard with build command `npm run build`
     - **Any static host**: Build with `npm run build` and upload the `dist` folder
 
 ### Configuration
