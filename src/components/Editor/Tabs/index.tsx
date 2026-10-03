@@ -37,7 +37,7 @@ import {
     History,
     Share2,
 } from "lucide-react";
-import { useEditorStore, QUERY_CANCELLED_MESSAGE } from "../store/editorStore";
+import { useEditorStore, EXECUTION_ABORTED } from "../store/editorStore";
 import { ReportTab } from "./ReportTab";
 import { useApi } from "@/hooks/useApi";
 import { useToast } from "@/hooks/use-toast";
@@ -147,17 +147,13 @@ export function Tabs() {
             if (!tab || tab.isExecuting) return;
             try {
                 const result = await executeQuery(tabId, executeQueryApi);
+                // Stopped runs report nothing here: the Stop handler owns
+                // the cancellation toast, and a newer run on this tab (if
+                // any) reports for itself.
+                if (result === EXECUTION_ABORTED) return;
                 const updated =
                     useEditorStore.getState().getTabById(tabId);
                 if (!updated) return;
-
-                if (updated.queryError === QUERY_CANCELLED_MESSAGE) {
-                    toast({
-                        title: "Query cancelled",
-                        description: "Execution was stopped.",
-                    });
-                    return;
-                }
 
                 if (!result || result.hasError) {
                     toast({
@@ -236,7 +232,12 @@ export function Tabs() {
     );
 
     const handleStop = () => {
-        if (activeTabId) cancelQuery(activeTabId);
+        if (!activeTabId) return;
+        cancelQuery(activeTabId);
+        toast({
+            title: "Query cancelled",
+            description: "Execution was stopped.",
+        });
     };
 
     const handleShare = useCallback(async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
     Dialog,
     DialogContent,
@@ -36,23 +36,40 @@ export function HistoryDialog({
     } = useIndexedDB();
     const [records, setRecords] = useState<QueryRecord[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const requestIdRef = useRef(0);
+
+    // Debounce the search term: every search reads the full IndexedDB
+    // history, so don't re-query on each keystroke.
+    useEffect(() => {
+        const timer = setTimeout(
+            () => setDebouncedSearchTerm(searchTerm),
+            250
+        );
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
 
     const reload = useCallback(async () => {
         if (!isReady) return;
+        const requestId = ++requestIdRef.current;
         setIsLoading(true);
         try {
-            const rows = searchTerm.trim()
-                ? await searchQueries(searchTerm.trim())
+            const rows = debouncedSearchTerm.trim()
+                ? await searchQueries(debouncedSearchTerm.trim())
                 : await getRecentQueries(100);
+            // Ignore responses from superseded requests.
+            if (requestIdRef.current !== requestId) return;
             rows.sort((a, b) => b.timestamp - a.timestamp);
             setRecords(rows);
         } catch (error) {
             console.warn("Failed to load query history:", error);
         } finally {
-            setIsLoading(false);
+            if (requestIdRef.current === requestId) {
+                setIsLoading(false);
+            }
         }
-    }, [isReady, searchTerm, searchQueries, getRecentQueries]);
+    }, [isReady, debouncedSearchTerm, searchQueries, getRecentQueries]);
 
     useEffect(() => {
         if (open) void reload();

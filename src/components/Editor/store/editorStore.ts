@@ -25,6 +25,12 @@ import type { QueryResult } from "@/services/api/types";
 
 export const QUERY_CANCELLED_MESSAGE = "Query cancelled";
 
+/**
+ * Distinct outcome for a cancelled execution, so callers can tell "the
+ * user stopped this run" apart from "the run failed" (null).
+ */
+export const EXECUTION_ABORTED = Symbol("execution-aborted");
+
 /** One in-flight execution per tab so the Stop button can cancel it. */
 const abortControllers = new Map<string, AbortController>();
 
@@ -72,7 +78,7 @@ interface EditorState {
             sql: string,
             signal?: AbortSignal
         ) => Promise<QueryResult>
-    ) => Promise<QueryResult | null>;
+    ) => Promise<QueryResult | typeof EXECUTION_ABORTED | null>;
     cancelQuery: (tabId: string) => void;
     clearQueryResult: (tabId: string) => void;
 
@@ -270,7 +276,8 @@ export const useEditorStore = create<EditorState>()(
                         processedSql,
                         controller.signal
                     );
-                    if (controller.signal.aborted) return null;
+                    if (controller.signal.aborted)
+                        return EXECUTION_ABORTED;
                     const withTime: QueryResult =
                         result.executionTime == null
                             ? {
@@ -291,7 +298,8 @@ export const useEditorStore = create<EditorState>()(
                     }));
                     return withTime;
                 } catch (error) {
-                    if (controller.signal.aborted) return null;
+                    if (controller.signal.aborted)
+                        return EXECUTION_ABORTED;
                     const queryError =
                         error instanceof Error
                             ? error.message

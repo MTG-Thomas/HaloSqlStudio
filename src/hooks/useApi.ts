@@ -51,9 +51,10 @@ export function useApi() {
         config.redirectUri,
     ]);
 
-    // Execute SQL query
+    // Execute SQL query; an AbortSignal (from the editor store's Stop
+    // button) is forwarded to the /Report fetch for true cancellation.
     const executeQuery = useCallback(
-        async (sql: string): Promise<QueryResult> => {
+        async (sql: string, signal?: AbortSignal): Promise<QueryResult> => {
             if (!apiClient) {
                 throw new Error("API not configured - check configuration");
             }
@@ -75,6 +76,7 @@ export function useApi() {
                 const response = await apiClient.makeRequest("/Report", {
                     method: "POST",
                     body: JSON.stringify(body),
+                    signal,
                 });
 
                 const executionTime = Date.now() - startTime;
@@ -113,6 +115,8 @@ export function useApi() {
                     hasError: true,
                 };
             } catch (error) {
+                // Aborted requests stay silent: the store reports EXECUTION_ABORTED.
+                if (signal?.aborted) throw error;
                 const errorMessage =
                     error instanceof Error
                         ? error.message

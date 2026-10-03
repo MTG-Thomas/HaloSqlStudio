@@ -16,7 +16,15 @@ function assertNumericId(name: string, value: string): void {
  * @throws Error when the value is not a valid date
  */
 function assertValidDate(name: string, value: string): void {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(value))) {
+    // Date.parse rolls impossible dates forward ("2025-02-30" becomes
+    // March 2nd), so require the parsed date to round-trip exactly.
+    const time = /^\d{4}-\d{2}-\d{2}$/.test(value)
+        ? Date.parse(value)
+        : Number.NaN;
+    const roundTrips =
+        !Number.isNaN(time) &&
+        new Date(time).toISOString().slice(0, 10) === value;
+    if (!roundTrips) {
         throw new Error(
             `Invalid value for ${name}: expected a date (YYYY-MM-DD), received "${value}"`
         );

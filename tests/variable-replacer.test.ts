@@ -70,6 +70,26 @@ describe("replaceHaloVariables", () => {
         }
     );
 
+    it.each(["@startdate", "@enddate"])(
+        "rejects impossible calendar dates for %s",
+        (name) => {
+            const sql = `SELECT * FROM t WHERE d >= ${name}`;
+            for (const bad of ["2025-02-30", "2025-04-31", "2025-02-29"]) {
+                expect(() =>
+                    replaceHaloVariables(sql, { [name]: bad })
+                ).toThrow(/date/);
+            }
+        }
+    );
+
+    it("accepts leap-day dates", () => {
+        expect(
+            replaceHaloVariables("SELECT * FROM t WHERE d >= @startdate", {
+                "@startdate": "2024-02-29",
+            })
+        ).toBe("SELECT * FROM t WHERE d >= '2024-02-29'");
+    });
+
     it("keeps placeholders for empty values (server-side fallback)", () => {
         const sql =
             "SELECT * FROM t WHERE a = $agentid AND s = $siteid AND d >= @startdate";

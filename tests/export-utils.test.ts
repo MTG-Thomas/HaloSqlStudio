@@ -44,6 +44,14 @@ describe("escapeCsvValue", () => {
         expect(escapeCsvValue("=A1,B1")).toBe("\"'=A1,B1\"");
     });
 
+    it("prefixes tab- and CR-prefixed formula payloads", () => {
+        expect(escapeCsvValue("\t=1+1")).toBe("'\t=1+1");
+        expect(escapeCsvValue("\r=1+1")).toBe("\"'\r=1+1\"");
+        expect(escapeCsvValue("\t@mention")).toBe("'\t@mention");
+        const result = resultWith([col("calc")], [{ calc: "\t=1+1" }]);
+        expect(buildCsvContent(result)).toBe("calc\n'\t=1+1");
+    });
+
     it("does not prefix values with leading trigger characters elsewhere", () => {
         expect(escapeCsvValue("a=b")).toBe("a=b");
         expect(escapeCsvValue("well-known")).toBe("well-known");

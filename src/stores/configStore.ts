@@ -47,6 +47,11 @@ export function validateServerUrl(url: string): string | null {
     } catch {
         return "Invalid URL";
     }
+    // Credentials, query strings, and fragments would corrupt the
+    // /authorize, /token, and /api paths appended to this URL.
+    if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+        return "Server URL must not include credentials, query, or fragment";
+    }
     if (parsed.protocol === "https:") {
         return null;
     }

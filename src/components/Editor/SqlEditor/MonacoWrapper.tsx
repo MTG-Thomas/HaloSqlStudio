@@ -7,9 +7,18 @@ import {
 } from "react";
 import type { editor, Position } from "monaco-editor";
 import * as monaco from "monaco-editor";
+import { loader } from "@monaco-editor/react";
+import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import { useMonacoSetup } from "./hooks/useMonacoSetup";
 import { useExplorerStore } from "@/stores/explorerStore";
 import { useThemeStore } from "../theme";
+
+// Use the bundled Monaco build instead of the CDN: the production
+// Content-Security-Policy only allows scripts from 'self' and blob:.
+loader.config({ monaco });
+self.MonacoEnvironment = {
+    getWorker: () => new editorWorker(),
+};
 
 // Lazy load Monaco Editor to reduce initial bundle size
 const Editor = lazy(() => import("@monaco-editor/react"));
@@ -72,6 +81,7 @@ export function MonacoWrapper({
 }: MonacoWrapperProps) {
     const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
     const onExecuteRef = useRef(onExecute);
+    const onSaveRef = useRef(onSave);
     const theme = useThemeStore((state) => state.theme);
     const monacoTheme = theme === "light" ? "vs" : "vs-dark";
     const { setupMonaco } = useMonacoSetup();
@@ -79,6 +89,12 @@ export function MonacoWrapper({
     useEffect(() => {
         onExecuteRef.current = onExecute;
     }, [onExecute]);
+
+    // Keybindings are registered once at mount, so the save callback must
+    // be read through a ref to stay current as the SQL changes.
+    useEffect(() => {
+        onSaveRef.current = onSave;
+    }, [onSave]);
 
     // Apply light/dark theme changes to a mounted editor.
     useEffect(() => {
@@ -96,7 +112,7 @@ export function MonacoWrapper({
                 editor.addCommand(
                     monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
                     () => {
-                        onSave?.();
+                        onSaveRef.current?.();
                     }
                 );
                 editor.addCommand(
@@ -109,7 +125,7 @@ export function MonacoWrapper({
                 console.warn("Failed to add command binding:", error);
             }
         },
-        [setupMonaco, onSave]
+        [setupMonaco]
     );
 
     // Cleanup editor on unmount

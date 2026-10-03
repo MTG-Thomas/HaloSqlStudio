@@ -142,9 +142,6 @@ export async function handleCallback(
             return false;
         }
 
-        // Mark this code as being processed
-        processedCodes.add(code);
-
         // Validate required fields
         if (!config.authServer || !config.clientId || !config.redirectUri) {
             throw new Error(
@@ -152,11 +149,11 @@ export async function handleCallback(
             );
         }
 
-        // Verify state and retrieve the PKCE verifier (single use)
+        // Verify state and retrieve the PKCE verifier. Nothing is
+        // consumed until validation passes, so a failed callback (or a
+        // remount retry with the correct state) can still proceed.
         const expectedState = sessionStorage.getItem(OAUTH_STATE_KEY);
         const verifier = sessionStorage.getItem(PKCE_VERIFIER_KEY);
-        sessionStorage.removeItem(OAUTH_STATE_KEY);
-        sessionStorage.removeItem(PKCE_VERIFIER_KEY);
 
         if (!expectedState || !state || state !== expectedState) {
             console.error(
@@ -169,6 +166,11 @@ export async function handleCallback(
             console.error("Missing PKCE verifier, aborting login");
             return false;
         }
+
+        // Validation passed: the code and verifier are now single-use.
+        processedCodes.add(code);
+        sessionStorage.removeItem(OAUTH_STATE_KEY);
+        sessionStorage.removeItem(PKCE_VERIFIER_KEY);
 
         const tokenParams = new URLSearchParams({
             grant_type: "authorization_code",
@@ -229,14 +231,30 @@ export function refreshToken(config: AuthConfig): Promise<boolean> {
     return refreshPromise;
 }
 
-async function doRefresh(config: AuthConfig): Promise<boolean> {
+function snapshotStoredTokens(): string | null {
     try {
-        const tokens = loadTokens();
-        if (!tokens?.refresh_token) {
-            console.warn("No refresh token available");
-            return false;
-        }
+        return localStorage.getItem(TOKEN_STORAGE_KEY);
+    } catch {
+        return null;
+    }
+}
 
+/** True when another login or refresh replaced the stored session. */
+function storedSessionChanged(before: string | null): boolean {
+    return snapshotStoredTokens() !== before;
+}
+
+async function doRefresh(config: AuthConfig): Promise<boolean> {
+    const tokens = loadTokens();
+    if (!tokens?.refresh_token) {
+        console.warn("No refresh token available");
+        return false;
+    }
+    // A fresh OAuth login may land while the refresh request is in
+    // flight; never let this older session overwrite or clear it.
+    const sessionBefore = snapshotStoredTokens();
+
+    try {
         const response = await fetch(
             `${stripTrailingSlash(config.authServer)}/token`,
             {
@@ -252,6 +270,10 @@ async function doRefresh(config: AuthConfig): Promise<boolean> {
                 }),
             }
         );
+
+        // A newer session won the race: preserve it and report success
+        // so callers don't log out a valid login.
+        if (storedSessionChanged(sessionBefore)) return true;
 
         if (!response.ok) {
             const errorText = await response.text();
@@ -277,6 +299,8 @@ async function doRefresh(config: AuthConfig): Promise<boolean> {
         saveTokens(newTokens);
         return true;
     } catch (error) {
+        // Same guard on the failure path: a newer session must survive.
+        if (storedSessionChanged(sessionBefore)) return true;
         console.error("Token refresh error:", error);
         clearTokens();
         return false;

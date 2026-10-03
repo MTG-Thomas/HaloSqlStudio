@@ -31,13 +31,13 @@ export function SqlEditor({
         originalSql,
     });
 
-    // Cmd/Ctrl+Enter: flush the freshest editor value, then execute it.
+    // Cmd/Ctrl+Enter: execute the freshest editor value. Flushing it to
+    // the store happens once in Tabs.handleEditorExecute, before the run.
     const handleExecute = useCallback(
         (value: string) => {
-            onContentChange(value);
             onExecute?.(value);
         },
-        [onContentChange, onExecute]
+        [onExecute]
     );
 
     return (

@@ -29,8 +29,10 @@ export function exportToJSON(result: QueryResult, filename?: string): void {
  */
 export function escapeCsvValue(value: string): string {
     let text = value;
-    // Prefix formula-like cells so spreadsheet apps treat them as text
-    if (/^[=+\-@]/.test(text)) {
+    // Prefix formula-like cells so spreadsheet apps treat them as text.
+    // Tab/CR prefixes are covered too: some spreadsheet apps trim them
+    // and would otherwise still interpret the cell as a formula.
+    if (/^[\t\r]*[=+\-@]/.test(text)) {
         text = `'${text}`;
     }
     if (

@@ -2,14 +2,16 @@ import type { WarningResult } from "@/lib/warnings";
 
 /**
  * Finds 1-based line numbers containing a semicolon outside of string
- * literals ('...', "...", `...`). T-SQL doubling ('', "") is honored.
- * Only string literals are excluded, per the documented contract.
+ * literals ('...', "...", `...`) and SQL comments (-- ..., / * ... * /).
+ * T-SQL doubling ('', "") is honored.
  */
 export function findBareSemicolonLines(sql: string): number[] {
     const flagged = new Set<number>();
     let inSingle = false;
     let inDouble = false;
     let inBacktick = false;
+    let inLineComment = false;
+    let inBlockComment = false;
     let line = 1;
 
     for (let i = 0; i < sql.length; i++) {
@@ -18,6 +20,15 @@ export function findBareSemicolonLines(sql: string): number[] {
 
         if (ch === "\n") {
             line++;
+            inLineComment = false;
+            continue;
+        }
+        if (inLineComment) continue;
+        if (inBlockComment) {
+            if (ch === "*" && next === "/") {
+                inBlockComment = false;
+                i++;
+            }
             continue;
         }
         if (inSingle) {
@@ -48,22 +59,48 @@ export function findBareSemicolonLines(sql: string): number[] {
         if (ch === "'") inSingle = true;
         else if (ch === '"') inDouble = true;
         else if (ch === "`") inBacktick = true;
-        else if (ch === ";") flagged.add(line);
+        else if (ch === "/" && next === "*") {
+            inBlockComment = true;
+            i++;
+        } else if (ch === "-" && next === "-") {
+            inLineComment = true;
+            i++;
+        } else if (ch === ";") flagged.add(line);
     }
 
     return [...flagged].sort((a, b) => a - b);
 }
 
-/** Removes semicolons outside string literals, preserving literals. */
+/**
+ * Removes semicolons outside string literals and SQL comments,
+ * preserving literals and comment text.
+ */
 export function stripSemicolonsOutsideStrings(sql: string): string {
     let out = "";
     let inSingle = false;
     let inDouble = false;
     let inBacktick = false;
+    let inLineComment = false;
+    let inBlockComment = false;
 
     for (let i = 0; i < sql.length; i++) {
         const ch = sql[i];
         const next = sql[i + 1];
+
+        if (ch === "\n") inLineComment = false;
+        if (inLineComment) {
+            out += ch;
+            continue;
+        }
+        if (inBlockComment) {
+            out += ch;
+            if (ch === "*" && next === "/") {
+                out += next;
+                i++;
+                inBlockComment = false;
+            }
+            continue;
+        }
 
         if (inSingle) {
             out += ch;
@@ -104,6 +141,12 @@ export function stripSemicolonsOutsideStrings(sql: string): string {
         } else if (ch === "`") {
             inBacktick = true;
             out += ch;
+        } else if (ch === "/" && next === "*") {
+            inBlockComment = true;
+            out += ch;
+        } else if (ch === "-" && next === "-") {
+            inLineComment = true;
+            out += ch;
         } else if (ch !== ";") {
             out += ch;
         }
@@ -119,9 +162,9 @@ export function scanSemicolonWarning(sql: string): WarningResult[] {
         {
             warning: {
                 id: "bare-semicolon",
-                title: "Semicolon outside string literal",
+                title: "Semicolon outside string literal or comment",
                 description:
-                    "Halo reports execute a single statement. Remove semicolons that are not inside string literals.",
+                    "Halo reports execute a single statement. Remove semicolons that are not inside string literals or comments.",
                 severity: "warning",
                 category: "compatibility",
                 test: (value: string) =>
