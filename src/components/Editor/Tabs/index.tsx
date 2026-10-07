@@ -337,17 +337,18 @@ export function Tabs() {
     };
 
     const activeTab = tabs.find((t) => t.id === activeTabId);
+    const activeSql = activeTab?.sql;
     const canSave =
         activeTab &&
         (activeTab.sql.trim() !== "" || activeTab.hasUnsavedChanges);
 
     // Scan for warnings when active tab changes or SQL changes
     useEffect(() => {
-        if (activeTabId && activeTab) {
-            const newWarnings = scanAllWarnings(activeTab.sql);
+        if (activeTabId && activeSql !== undefined) {
+            const newWarnings = scanAllWarnings(activeSql);
             setWarnings(newWarnings);
         }
-    }, [activeTabId, activeTab?.sql]);
+    }, [activeTabId, activeSql]);
 
     // Close warnings dropdown when clicking outside
     useEffect(() => {
