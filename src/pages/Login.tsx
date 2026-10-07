@@ -9,7 +9,7 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 import { ConfigDialog } from "@/components/ConfigDialog";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/useAuth";
 import { useConfig } from "@/hooks/useConfig";
 import { Database, Shield, Zap } from "lucide-react";
 

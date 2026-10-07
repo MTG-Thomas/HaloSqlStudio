@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { Explorer } from "@/components/Explorer";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/useAuth";
 import { useConfig } from "@/hooks/useConfig";
 import { Button } from "@/components/ui/button";
 import { ConfigDialog } from "@/components/ConfigDialog";

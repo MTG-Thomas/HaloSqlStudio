@@ -1,32 +1,8 @@
-import React, {
-    createContext,
-    useContext,
-    useEffect,
-    useState,
-    ReactNode,
-    useCallback,
-} from "react";
+import React, { useEffect, useState, ReactNode, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import * as authService from "@/services/auth/authService";
 import { useConfig } from "@/hooks/useConfig";
-
-interface AuthContextType {
-    isAuthenticated: boolean;
-    isLoading: boolean;
-    startAuth: () => Promise<void>;
-    logout: () => Promise<void>;
-    handleCallback: (code: string, state?: string | null) => Promise<boolean>;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-export const useAuth = () => {
-    const context = useContext(AuthContext);
-    if (context === undefined) {
-        throw new Error("useAuth must be used within an AuthProvider");
-    }
-    return context;
-};
+import { AuthContext, type AuthContextType } from "./useAuth";
 
 interface AuthProviderProps {
     children: ReactNode;
