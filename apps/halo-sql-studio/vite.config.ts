@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, parse } from "node:path";
 
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, lazyPlugins } from "vite-plus";
 
 // Tokenless local dev — three sources, in order:
 //   1. process env (the CLI exported BIFROST_API_URL/BIFROST_ACCESS_TOKEN), then
@@ -68,12 +68,17 @@ export default defineConfig(({ command }) => {
       ? {
           "import.meta.env.VITE_BIFROST_API_URL": JSON.stringify(env.url),
           "import.meta.env.VITE_BIFROST_TOKEN": JSON.stringify(env.token),
-          "import.meta.env.VITE_BIFROST_APP_ID": JSON.stringify(process.env.VITE_BIFROST_APP_ID || ""),
-          "import.meta.env.VITE_BIFROST_ORG_ID": JSON.stringify(process.env.VITE_BIFROST_ORG_ID || null),
+          "import.meta.env.VITE_BIFROST_APP_ID": JSON.stringify(
+            process.env.VITE_BIFROST_APP_ID || "",
+          ),
+          "import.meta.env.VITE_BIFROST_ORG_ID": JSON.stringify(
+            process.env.VITE_BIFROST_ORG_ID || null,
+          ),
         }
       : {};
   return {
-    plugins: [react()],
+    plugins: lazyPlugins(() => [react()]),
+    lint: { options: { typeAware: true, typeCheck: true } },
     define,
     // `@/` → src, so shadcn component source (which imports `@/lib/utils` and
     // `@/components/ui/*`) resolves the same as in the shadcn docs.

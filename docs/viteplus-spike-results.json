@@ -1,0 +1,170 @@
+[
+  {
+    "candidate": "baseline",
+    "check": "build-cold-1",
+    "seconds": 9.351,
+    "exit": 0
+  },
+  {
+    "candidate": "baseline",
+    "check": "build-cold-2",
+    "seconds": 1.592,
+    "exit": 0
+  },
+  {
+    "candidate": "baseline",
+    "check": "build-cold-3",
+    "seconds": 1.52,
+    "exit": 0
+  },
+  {
+    "candidate": "baseline",
+    "check": "build-warm-1",
+    "seconds": 1.516,
+    "exit": 0
+  },
+  {
+    "candidate": "baseline",
+    "check": "build-warm-2",
+    "seconds": 1.493,
+    "exit": 0
+  },
+  {
+    "candidate": "baseline",
+    "check": "build-warm-3",
+    "seconds": 1.54,
+    "exit": 0
+  },
+  {
+    "candidate": "baseline",
+    "check": "validation-1",
+    "seconds": 26.492,
+    "exit": 1
+  },
+  {
+    "candidate": "baseline",
+    "check": "validation-2",
+    "seconds": 4.3,
+    "exit": 1
+  },
+  {
+    "candidate": "baseline",
+    "check": "validation-3",
+    "seconds": 4.198,
+    "exit": 1
+  },
+  {
+    "candidate": "baseline",
+    "check": "ts-app",
+    "seconds": 4.861,
+    "exit": 2
+  },
+  {
+    "candidate": "baseline",
+    "check": "ts-node",
+    "seconds": 2.32,
+    "exit": 0
+  },
+  {
+    "candidate": "baseline",
+    "check": "python",
+    "seconds": 1.425,
+    "exit": 2
+  },
+  {
+    "candidate": "baseline",
+    "check": "versions",
+    "seconds": 1.066,
+    "exit": 0
+  },
+  {
+    "candidate": "baseline",
+    "files": 14,
+    "bytes": 1698939,
+    "gzip_bytes": 486937
+  },
+  {
+    "candidate": "migration",
+    "check": "build-cold-1",
+    "seconds": 1.691,
+    "exit": 0
+  },
+  {
+    "candidate": "migration",
+    "check": "build-cold-2",
+    "seconds": 1.812,
+    "exit": 0
+  },
+  {
+    "candidate": "migration",
+    "check": "build-cold-3",
+    "seconds": 1.992,
+    "exit": 0
+  },
+  {
+    "candidate": "migration",
+    "check": "build-warm-1",
+    "seconds": 1.839,
+    "exit": 0
+  },
+  {
+    "candidate": "migration",
+    "check": "build-warm-2",
+    "seconds": 1.873,
+    "exit": 0
+  },
+  {
+    "candidate": "migration",
+    "check": "build-warm-3",
+    "seconds": 2.623,
+    "exit": 0
+  },
+  {
+    "candidate": "migration",
+    "check": "validation-1",
+    "seconds": 18.036,
+    "exit": 1
+  },
+  {
+    "candidate": "migration",
+    "check": "validation-2",
+    "seconds": 4.915,
+    "exit": 1
+  },
+  {
+    "candidate": "migration",
+    "check": "validation-3",
+    "seconds": 5.096,
+    "exit": 1
+  },
+  {
+    "candidate": "migration",
+    "check": "ts-app",
+    "seconds": 5.673,
+    "exit": 2
+  },
+  {
+    "candidate": "migration",
+    "check": "ts-node",
+    "seconds": 2.508,
+    "exit": 0
+  },
+  {
+    "candidate": "migration",
+    "check": "python",
+    "seconds": 0.717,
+    "exit": 2
+  },
+  {
+    "candidate": "migration",
+    "check": "versions",
+    "seconds": 1.371,
+    "exit": 0
+  },
+  {
+    "candidate": "migration",
+    "files": 14,
+    "bytes": 1699550,
+    "gzip_bytes": 486982
+  }
+]
